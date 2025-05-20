@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #1a73e8;
+      text-align: center;
+    }
+    .classroom-btn {
+      display: block;
+      width: 100%;
+      margin: 10px 0;
+      padding: 12px;
+      font-size: 16px;
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .classroom-btn:hover {
+      background-color: #0d5bba;
+    }
+    #status {
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .loading {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <h1>Регистрация посещения</h1>
+  <p>Выберите аудиторию:</p>
+  
+  <div id="classroom-buttons">
+    <!-- Кнопки будут добавлены скриптом -->
+  </div>
+  
+  <div id="status"></div>
+
+  <script>
+    function generateClassroomButtons() {
+      const container = document.getElementById('classroom-buttons');
+      const statusDiv = document.getElementById('status');
+      
+      statusDiv.className = 'loading';
+      statusDiv.textContent = 'Загрузка списка аудиторий...';
+      
+      google.script.run
+        .withSuccessHandler((classrooms) => {
+          if (classrooms.length === 0) {
+            statusDiv.className = 'error';
+            statusDiv.textContent = 'Нет доступных аудиторий';
+            return;
+          }
+          
+          statusDiv.textContent = '';
+          statusDiv.className = '';
+          
+          classrooms.forEach(classroom => {
+            const button = document.createElement('button');
+            button.className = 'classroom-btn';
+            button.textContent = classroom;
+            button.onclick = () => registerAttendance(classroom);
+            container.appendChild(button);
+          });
+        })
+        .withFailureHandler((error) => {
+          statusDiv.className = 'error';
+          statusDiv.textContent = 'Ошибка загрузки аудиторий: ' + error.message;
+        })
+        .getClassroomsList();
+    }
+    
+    function registerAttendance(classroom) {
+      const statusDiv = document.getElementById('status');
+      statusDiv.className = 'loading';
+      statusDiv.textContent = 'Проверка местоположения...';
+      
+      if (!navigator.geolocation) {
+        statusDiv.className = 'error';
+        statusDiv.textContent = 'Геолокация не поддерживается вашим браузером';
+        return;
+      }
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          statusDiv.textContent = 'Отправка данных...';
+          
+          google.script.run
+            .withSuccessHandler((response) => {
+              statusDiv.className = 'success';
+              statusDiv.textContent = response.message;
+            })
+            .withFailureHandler((error) => {
+              statusDiv.className = 'error';
+              statusDiv.textContent = 'Ошибка: ' + error.message;
+            })
+            .submitAttendance(
+              position.coords.latitude,
+              position.coords.longitude,
+              position.coords.accuracy,
+              classroom
+            );
+        },
+        (error) => {
+          statusDiv.className = 'error';
+          let message = '';
+          switch(error.code) {
+            case error.PERMISSION_DENIED:
+              message = 'Доступ к геолокации запрещен';
+              break;
+            case error.POSITION_UNAVAILABLE:
+              message = 'Информация о местоположении недоступна';
+              break;
+            case error.TIMEOUT:
+              message = 'Время ожидания геолокации истекло';
+              break;
+            default:
+              message = 'Неизвестная ошибка геолокации';
+          }
+          statusDiv.textContent = message;
+        }
+      );
+    }
+    
+    // Инициализация при загрузке страницы
+    window.onload = generateClassroomButtons;
+  </script>
+</body>
+</html>
