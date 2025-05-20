@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial; padding: 15px; }
+    select, input { width: 100%; padding: 6px; margin-bottom: 10px; }
+    .student { margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 8px; }
+    .name { font-weight: bold; margin-bottom: 5px; }
+    .buttons button {
+      margin: 3px;
+      padding: 6px 10px;
+      font-size: 14px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #status, #counter {
+      font-style: italic;
+      color: #555;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Учёт посещаемости</h2>
+
+  <label for="group-select">Группа:</label>
+  <select id="group-select"><option>Загрузка...</option></select>
+
+  <label for="date-select">Дата занятия:</label>
+  <select id="date-select"><option>Загрузка...</option></select>
+
+  <label for="search">Поиск по ФИО:</label>
+  <input type="text" id="search" placeholder="Начните вводить фамилию...">
+
+  <div id="counter">Студенты: —</div>
+  <div id="status">⏳ Загрузка студентов...</div>
+  <div id="student-list"></div>
+
+  <script>
+    let currentDate = "";
+    let fullData = { students: [], dates: [] };
+
+    function logStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    function getMarkState(studentName, callback) {
+      google.script.run
+        .withSuccessHandler(callback)
+        .withFailureHandler(() => callback(null))
+        .getStudentMarkForDate(studentName, currentDate); // можно позже добавить такую функцию
+    }
+
+    function renderFilteredList() {
+  const group = document.getElementById("group-select").value;
+  const search = document.getElementById("search").value.toLowerCase();
+  const list = document.getElementById("student-list");
+  list.innerHTML = "";
+
+  google.script.run
+    .withSuccessHandler(function (marksMap) {
+      const students = fullData.students.filter(s =>
+        s.group === group && s.name.toLowerCase().includes(search)
+      );
+
+      let marked = 0;
+      let unmarked = 0;
+
+      students.forEach(student => {
+        const value = marksMap[student.name] || "";
+        const isMarked = value !== "";
+
+        if (isMarked) marked++;
+        else unmarked++;
+
+        const block = document.createElement("div");
+        block.className = "student";
+
+        const label = document.createElement("div");
+        label.className = "name";
+        label.textContent = student.name + (isMarked ? ` (${value})` : "");
+
+        const btns = document.createElement("div");
+        btns.className = "buttons";
+
+        ['•', '+', 'Н', '2', '3', '4', '5'].forEach(mark => {
+          const b = document.createElement("button");
+          b.textContent = mark;
+          if (value === mark) {
+            b.style.backgroundColor = "#d0ffd0"; // зелёный фон для текущей отметки
+          }
+          b.onclick = () => {
+            google.script.run
+              .withSuccessHandler(msg => {
+                alert(msg);
+                renderFilteredList(); // обновим счётчик и интерфейс
+              })
+              .withFailureHandler(err => alert("❌ Ошибка: " + err.message))
+              .setMark(student.name, mark, currentDate);
+          };
+          btns.appendChild(b);
+        });
+
+        block.appendChild(label);
+        block.appendChild(btns);
+        list.appendChild(block);
+      });
+
+      document.getElementById("counter").textContent =
+        `Всего: ${students.length} | Отмечено: ${marked} | Неотмечено: ${unmarked}`;
+      logStatus("✅ Отображено студентов: " + students.length);
+    })
+    .withFailureHandler(function (err) {
+      logStatus("❌ Ошибка при получении отметок: " + err.message);
+    })
+    .getMarksMap(currentDate);
+}
+
+    function renderInterface(data) {
+      fullData = data;
+      const groups = [...new Set(data.students.map(s => s.group).filter(g => g && g !== ""))];
+      const groupSelect = document.getElementById("group-select");
+      groupSelect.innerHTML = "";
+
+      groups.forEach(function (g) {
+        const opt = document.createElement("option");
+        opt.value = g;
+        opt.textContent = g;
+        groupSelect.appendChild(opt);
+      });
+
+      groupSelect.onchange = renderFilteredList;
+
+      const dateSelect = document.getElementById("date-select");
+      dateSelect.innerHTML = "";
+
+      data.dates.forEach(function (d) {
+        const opt = document.createElement("option");
+        opt.value = d;
+        opt.textContent = d;
+        dateSelect.appendChild(opt);
+      });
+
+      currentDate = data.dates[0];
+      dateSelect.onchange = function () {
+        currentDate = dateSelect.value;
+        renderFilteredList();
+      };
+
+      document.getElementById("search").oninput = renderFilteredList;
+
+      groupSelect.selectedIndex = 0;
+      renderFilteredList();
+    }
+
+    google.script.run
+      .withSuccessHandler(renderInterface)
+      .withFailureHandler(function (err) {
+        logStatus("❌ Ошибка загрузки: " + err.message);
+      })
+      .getStudentsAndDates();
+  </script>
+</body>
+</html>
+
+
